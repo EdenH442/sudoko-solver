@@ -1,0 +1,375 @@
+import pygame
+import tkinter as tk
+from tkinter import filedialog
+import sys
+import os
+import random
+
+# Configure logger if you have one in the main application
+import logging
+logger = logging.getLogger(__name__)
+
+# --------------------------------------------------
+# Constants & colors
+# --------------------------------------------------
+GRID_SIZE = 9
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+LIGHT_GRAY = (240, 240, 240)
+DARK_GRAY = (200, 200, 200)
+HOVER_COLOR = (170, 170, 170)
+TEXT_COLOR = (50, 50, 50)
+HIGHLIGHT_COLOR = (173, 216, 230)
+SOLVING_COLOR = (100, 149, 237)
+BACKGROUND_COLOR = (30, 30, 30)
+BUTTON_COLOR = (50, 150, 200)
+BUTTON_BORDER = (30, 30, 30)
+FIXED_TEXT_COLOR = (255, 255, 255)
+
+BUTTON_LABELS = [
+    "Clean Board",
+    "Load New Puzzle",
+]
+
+# --------------------------------------------------
+# Utility functions
+# --------------------------------------------------
+
+def load_board_from_file(path: str):
+    """Load a 9x9 board from a text file. Accepts commas or spaces.
+
+    The file should contain exactly 9 lines with 9 numbers each.
+    Empty cells may be represented by 0 or a dot.
+    """
+    board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+    with open(path, "r", encoding="utf-8") as f:
+        for r, line in enumerate(f):
+            if r >= GRID_SIZE:
+                break
+            parts = [p for p in line.strip().replace(",", " ").split() if p]
+            for c, token in enumerate(parts[:GRID_SIZE]):
+                if token in (".", "0"):
+                    board[r][c] = 0
+                else:
+                    try:
+                        board[r][c] = int(token)
+                    except ValueError:
+                        board[r][c] = 0
+    return board
+
+
+def parse_puzzle_line(line: str):
+    """Parse a single CSV/text line into a 9x9 board (list of lists).
+
+    Supports:
+    - 81-character strings of digits/dots (no separators)
+    - comma or space separated tokens (9 tokens per row or 81 tokens total)
+    Returns a 9x9 list of ints (0 for blank).
+    """
+    s = line.strip()
+    if not s:
+        return None
+
+    # try comma-separated or space-separated tokens
+    if "," in s or " " in s:
+        parts = [p for p in s.replace(",", " ").split() if p]
+        if len(parts) >= GRID_SIZE * GRID_SIZE:
+            parts = parts[: GRID_SIZE * GRID_SIZE]
+        elif len(parts) == GRID_SIZE:
+            # maybe a single row; cannot parse full board
+            return None
+        if len(parts) == GRID_SIZE * GRID_SIZE:
+            board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+            for i, token in enumerate(parts):
+                r = i // GRID_SIZE
+                c = i % GRID_SIZE
+                if token in (".", "0"):
+                    board[r][c] = 0
+                else:
+                    try:
+                        board[r][c] = int(token)
+                    except ValueError:
+                        board[r][c] = 0
+            return board
+
+    # try contiguous 81-char format
+    compact = "".join(ch for ch in s if ch.isdigit() or ch == ".")
+    if len(compact) >= GRID_SIZE * GRID_SIZE:
+        compact = compact[: GRID_SIZE * GRID_SIZE]
+        board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+        for i, ch in enumerate(compact):
+            r = i // GRID_SIZE
+            c = i % GRID_SIZE
+            if ch == "." or ch == "0":
+                board[r][c] = 0
+            else:
+                board[r][c] = int(ch)
+        return board
+
+    return None
+
+
+def pick_random_puzzle_from_csv(path: str, exclude_line: str | None = None, tries: int = 5):
+    """Select a random non-empty line from a CSV/text file and parse it into a board.
+
+    Uses reservoir sampling to avoid loading the whole file. If the chosen line equals
+    `exclude_line`, it will retry up to `tries` times.
+    Returns (board, chosen_line) or (None, None) on failure.
+    """
+    if not os.path.exists(path):
+        return None, None
+
+    for attempt in range(tries):
+        chosen = None
+        chosen_line = None
+        count = 0
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                count += 1
+                if random.randrange(count) == 0:
+                    chosen_line = line
+        if chosen_line is None:
+            return None, None
+        if exclude_line and chosen_line == exclude_line:
+            # try again
+            continue
+        board = parse_puzzle_line(chosen_line)
+        if board is not None:
+            return board, chosen_line
+    return None, None
+
+
+# --------------------------------------------------
+# GUI class
+# --------------------------------------------------
+
+class SudokuGUI:
+    def __init__(self, width=800, height=750):
+        pygame.init()
+        self.window_width = width
+        self.window_height = height
+        self.screen = pygame.display.set_mode((self.window_width, self.window_height))
+        pygame.display.set_caption("Sudoku Solver")
+        self.clock = pygame.time.Clock()
+
+        # compute geometry - fixed cell size to keep grid consistent
+        self.cell_size = 60
+        self.grid_offset = (
+            (self.window_width - self.cell_size * GRID_SIZE) // 2,
+            85,
+        )
+
+        # state
+        self.board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+        # `fixed` marks cells that came from a loaded puzzle and cannot be changed
+        self.fixed = [[False] * GRID_SIZE for _ in range(GRID_SIZE)]
+        self.selected_cell = None
+        self.solving_cell = None
+        self.font = pygame.font.SysFont("arial", self.cell_size // 2)
+        self.button_font = pygame.font.SysFont("arial", 20)
+        self.title_font = pygame.font.SysFont("arial", 40, bold=True)
+        self.running = True
+        self._last_loaded_line = None
+
+        # Try to load an initial puzzle from data/test.csv if available
+        test_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+        if os.path.exists(test_path):
+            try:
+                self.load_random_test_puzzle(test_path)
+            except Exception:
+                # ignore and continue with empty board
+                logger.exception("Failed to auto-load initial puzzle from test.csv")
+
+    # ---------- drawing helpers ----------
+    def draw_grid(self):
+        grid_size_px = self.cell_size * GRID_SIZE
+        x_off, y_off = self.grid_offset
+        for i in range(GRID_SIZE + 1):
+            line_width = 3 if i % 3 == 0 else 1
+            pygame.draw.line(
+                self.screen,
+                BLACK,
+                (x_off, y_off + i * self.cell_size),
+                (x_off + grid_size_px, y_off + i * self.cell_size),
+                line_width,
+            )
+            pygame.draw.line(
+                self.screen,
+                BLACK,
+                (x_off + i * self.cell_size, y_off),
+                (x_off + i * self.cell_size, y_off + grid_size_px),
+                line_width,
+            )
+
+    def draw_title(self):
+        title_text = "SUDOKU SOLVER"
+        txt = self.title_font.render(title_text, True, WHITE)
+        txtrect = txt.get_rect(center=(self.window_width // 2, 40))
+        self.screen.blit(txt, txtrect)
+
+    def draw_board(self):
+        x_off, y_off = self.grid_offset
+        for r in range(GRID_SIZE):
+            for c in range(GRID_SIZE):
+                value = self.board[r][c]
+                cell_rect = pygame.Rect(
+                    x_off + c * self.cell_size,
+                    y_off + r * self.cell_size,
+                    self.cell_size,
+                    self.cell_size,
+                )
+
+                if self.selected_cell == (c, r):
+                    pygame.draw.rect(self.screen, HIGHLIGHT_COLOR, cell_rect)
+                if self.solving_cell == (c, r):
+                    pygame.draw.rect(self.screen, SOLVING_COLOR, cell_rect)
+
+                if value != 0:
+                    # render fixed (loaded) values slightly differently and non-editable
+                    color = FIXED_TEXT_COLOR if self.fixed[r][c] else BLACK
+                    txt = self.font.render(str(value), True, color)
+                    txtrect = txt.get_rect(center=cell_rect.center)
+                    self.screen.blit(txt, txtrect)
+
+    def _button_rects(self):
+        button_w = 140
+        button_h = 40
+        spacing = 15
+        total_w = len(BUTTON_LABELS) * button_w + (len(BUTTON_LABELS) - 1) * spacing
+        start_x = (self.window_width - total_w) // 2
+        y = self.grid_offset[1] + self.cell_size * GRID_SIZE + 30
+        rects = []
+        for idx, _ in enumerate(BUTTON_LABELS):
+            rects.append(
+                pygame.Rect(start_x + idx * (button_w + spacing), y, button_w, button_h)
+            )
+        return rects
+
+    def draw_buttons(self):
+        rects = self._button_rects()
+        mx, my = pygame.mouse.get_pos()
+        for rect, label in zip(rects, BUTTON_LABELS):
+            color = BUTTON_COLOR
+            if rect.collidepoint((mx, my)):
+                color = HOVER_COLOR
+            pygame.draw.rect(self.screen, color, rect, border_radius=10)
+            pygame.draw.rect(self.screen, BUTTON_BORDER, rect, 2, border_radius=10)
+            txt = self.button_font.render(label, True, TEXT_COLOR)
+            txtrect = txt.get_rect(center=rect.center)
+            self.screen.blit(txt, txtrect)
+
+    # ---------- input / event handling ----------
+    def handle_button_click(self, pos):
+        for rect, label in zip(self._button_rects(), BUTTON_LABELS):
+            if rect.collidepoint(pos):
+                action = label.lower().replace(" ", "_")
+                return action
+        return None
+
+    def handle_grid_click(self, pos):
+        x, y = pos
+        x_off, y_off = self.grid_offset
+        if x_off <= x < x_off + self.cell_size * GRID_SIZE and y_off <= y < y_off + self.cell_size * GRID_SIZE:
+            row = (y - y_off) // self.cell_size
+            col = (x - x_off) // self.cell_size
+            return int(col), int(row)
+        return None
+
+    def load_puzzle(self):
+        # use tkinter filedialog without showing window
+        root = tk.Tk()
+        root.withdraw()
+        file_path = filedialog.askopenfilename(
+            title="Select puzzle file",
+            filetypes=[("Text files", "*.txt;*.csv"), ("All files", "*")],
+        )
+        root.destroy()
+        if file_path:
+            try:
+                self.board = load_board_from_file(file_path)
+                # mark non-zero cells as fixed (immutable)
+                self.fixed = [[self.board[r][c] != 0 for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
+                self.selected_cell = None
+            except Exception as e:
+                logger.exception("Failed to load puzzle: %s", e)
+
+    def load_random_test_puzzle(self, path: str | None = None):
+        """Load a random puzzle from `data/test.csv`. If `path` is None a default location is used.
+
+        Avoids re-loading the same puzzle twice in a row when possible.
+        """
+        if path is None:
+            path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+        board, chosen_line = pick_random_puzzle_from_csv(path, exclude_line=self._last_loaded_line)
+        if board is None:
+            # fall back to file dialog load
+            self.load_puzzle()
+            return
+        self.board = board
+        # mark loaded cells as fixed
+        self.fixed = [[self.board[r][c] != 0 for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
+        self.selected_cell = None
+        self._last_loaded_line = chosen_line
+
+    # ---------- main loop ----------
+    def run(self):
+        while self.running:
+            self.screen.fill(BACKGROUND_COLOR)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    cell = self.handle_grid_click(event.pos)
+                    if cell:
+                        self.selected_cell = cell
+                    else:
+                        action = self.handle_button_click(event.pos)
+                        if action:
+                            self._perform_action(action)
+                elif event.type == pygame.KEYDOWN and self.selected_cell:
+                    c, r = self.selected_cell
+                    # Do not allow editing fixed (loaded) cells
+                    if self.fixed[r][c]:
+                        continue
+                    if event.key == pygame.K_BACKSPACE or event.key == pygame.K_DELETE:
+                        self.board[r][c] = 0
+                    elif pygame.K_1 <= event.key <= pygame.K_9:
+                        self.board[r][c] = event.key - pygame.K_0
+            self.draw_title()
+            self.draw_grid()
+            self.draw_board()
+            self.draw_buttons()
+            pygame.display.flip()
+            self.clock.tick(60)
+        pygame.quit()
+
+    def _perform_action(self, action_name):
+        if action_name == "load_new_puzzle":
+            # prefer random puzzle from test.csv when present
+            test_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+            if os.path.exists(test_path):
+                self.load_random_test_puzzle(test_path)
+            else:
+                self.load_puzzle()
+        elif action_name == "clean_board":
+            # clear only non-fixed cells
+            for r in range(GRID_SIZE):
+                for c in range(GRID_SIZE):
+                    if not self.fixed[r][c]:
+                        self.board[r][c] = 0
+            self.selected_cell = None
+        else:
+            # no additional buttons available; log unexpected
+            logger.warning("Unhandled button action: %s", action_name)
+
+
+# --------------------------------------------------
+# Entry point
+# --------------------------------------------------
+
+if __name__ == "__main__":
+    gui = SudokuGUI()
+    gui.run()

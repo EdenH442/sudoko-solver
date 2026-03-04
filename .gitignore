@@ -5,3 +5,8 @@ env/
 .vscode/
 .idea/
 *.log
+
+# temporary / large data files
+# Add other patterns here if needed
+data/*.csv
+*.csv
