@@ -2,6 +2,8 @@ import pygame
 import tkinter as tk
 from tkinter import filedialog
 import sys
+import os
+import random
 
 # Configure logger if you have one in the main application
 import logging
@@ -22,6 +24,7 @@ SOLVING_COLOR = (100, 149, 237)
 BACKGROUND_COLOR = (30, 30, 30)
 BUTTON_COLOR = (50, 150, 200)
 BUTTON_BORDER = (30, 30, 30)
+FIXED_TEXT_COLOR = (255, 255, 255)
 
 BUTTON_LABELS = [
     "Clean Board",
@@ -55,6 +58,90 @@ def load_board_from_file(path: str):
     return board
 
 
+def parse_puzzle_line(line: str):
+    """Parse a single CSV/text line into a 9x9 board (list of lists).
+
+    Supports:
+    - 81-character strings of digits/dots (no separators)
+    - comma or space separated tokens (9 tokens per row or 81 tokens total)
+    Returns a 9x9 list of ints (0 for blank).
+    """
+    s = line.strip()
+    if not s:
+        return None
+
+    # try comma-separated or space-separated tokens
+    if "," in s or " " in s:
+        parts = [p for p in s.replace(",", " ").split() if p]
+        if len(parts) >= GRID_SIZE * GRID_SIZE:
+            parts = parts[: GRID_SIZE * GRID_SIZE]
+        elif len(parts) == GRID_SIZE:
+            # maybe a single row; cannot parse full board
+            return None
+        if len(parts) == GRID_SIZE * GRID_SIZE:
+            board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+            for i, token in enumerate(parts):
+                r = i // GRID_SIZE
+                c = i % GRID_SIZE
+                if token in (".", "0"):
+                    board[r][c] = 0
+                else:
+                    try:
+                        board[r][c] = int(token)
+                    except ValueError:
+                        board[r][c] = 0
+            return board
+
+    # try contiguous 81-char format
+    compact = "".join(ch for ch in s if ch.isdigit() or ch == ".")
+    if len(compact) >= GRID_SIZE * GRID_SIZE:
+        compact = compact[: GRID_SIZE * GRID_SIZE]
+        board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+        for i, ch in enumerate(compact):
+            r = i // GRID_SIZE
+            c = i % GRID_SIZE
+            if ch == "." or ch == "0":
+                board[r][c] = 0
+            else:
+                board[r][c] = int(ch)
+        return board
+
+    return None
+
+
+def pick_random_puzzle_from_csv(path: str, exclude_line: str | None = None, tries: int = 5):
+    """Select a random non-empty line from a CSV/text file and parse it into a board.
+
+    Uses reservoir sampling to avoid loading the whole file. If the chosen line equals
+    `exclude_line`, it will retry up to `tries` times.
+    Returns (board, chosen_line) or (None, None) on failure.
+    """
+    if not os.path.exists(path):
+        return None, None
+
+    for attempt in range(tries):
+        chosen = None
+        chosen_line = None
+        count = 0
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                count += 1
+                if random.randrange(count) == 0:
+                    chosen_line = line
+        if chosen_line is None:
+            return None, None
+        if exclude_line and chosen_line == exclude_line:
+            # try again
+            continue
+        board = parse_puzzle_line(chosen_line)
+        if board is not None:
+            return board, chosen_line
+    return None, None
+
+
 # --------------------------------------------------
 # GUI class
 # --------------------------------------------------
@@ -77,12 +164,24 @@ class SudokuGUI:
 
         # state
         self.board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+        # `fixed` marks cells that came from a loaded puzzle and cannot be changed
+        self.fixed = [[False] * GRID_SIZE for _ in range(GRID_SIZE)]
         self.selected_cell = None
         self.solving_cell = None
         self.font = pygame.font.SysFont("arial", self.cell_size // 2)
         self.button_font = pygame.font.SysFont("arial", 20)
         self.title_font = pygame.font.SysFont("arial", 40, bold=True)
         self.running = True
+        self._last_loaded_line = None
+
+        # Try to load an initial puzzle from data/test.csv if available
+        test_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+        if os.path.exists(test_path):
+            try:
+                self.load_random_test_puzzle(test_path)
+            except Exception:
+                # ignore and continue with empty board
+                logger.exception("Failed to auto-load initial puzzle from test.csv")
 
     # ---------- drawing helpers ----------
     def draw_grid(self):
@@ -129,7 +228,9 @@ class SudokuGUI:
                     pygame.draw.rect(self.screen, SOLVING_COLOR, cell_rect)
 
                 if value != 0:
-                    txt = self.font.render(str(value), True, BLACK)
+                    # render fixed (loaded) values slightly differently and non-editable
+                    color = FIXED_TEXT_COLOR if self.fixed[r][c] else BLACK
+                    txt = self.font.render(str(value), True, color)
                     txtrect = txt.get_rect(center=cell_rect.center)
                     self.screen.blit(txt, txtrect)
 
@@ -189,9 +290,29 @@ class SudokuGUI:
         if file_path:
             try:
                 self.board = load_board_from_file(file_path)
+                # mark non-zero cells as fixed (immutable)
+                self.fixed = [[self.board[r][c] != 0 for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
                 self.selected_cell = None
             except Exception as e:
                 logger.exception("Failed to load puzzle: %s", e)
+
+    def load_random_test_puzzle(self, path: str | None = None):
+        """Load a random puzzle from `data/test.csv`. If `path` is None a default location is used.
+
+        Avoids re-loading the same puzzle twice in a row when possible.
+        """
+        if path is None:
+            path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+        board, chosen_line = pick_random_puzzle_from_csv(path, exclude_line=self._last_loaded_line)
+        if board is None:
+            # fall back to file dialog load
+            self.load_puzzle()
+            return
+        self.board = board
+        # mark loaded cells as fixed
+        self.fixed = [[self.board[r][c] != 0 for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
+        self.selected_cell = None
+        self._last_loaded_line = chosen_line
 
     # ---------- main loop ----------
     def run(self):
@@ -209,11 +330,13 @@ class SudokuGUI:
                         if action:
                             self._perform_action(action)
                 elif event.type == pygame.KEYDOWN and self.selected_cell:
+                    c, r = self.selected_cell
+                    # Do not allow editing fixed (loaded) cells
+                    if self.fixed[r][c]:
+                        continue
                     if event.key == pygame.K_BACKSPACE or event.key == pygame.K_DELETE:
-                        c, r = self.selected_cell
                         self.board[r][c] = 0
                     elif pygame.K_1 <= event.key <= pygame.K_9:
-                        c, r = self.selected_cell
                         self.board[r][c] = event.key - pygame.K_0
             self.draw_title()
             self.draw_grid()
@@ -225,9 +348,18 @@ class SudokuGUI:
 
     def _perform_action(self, action_name):
         if action_name == "load_new_puzzle":
-            self.load_puzzle()
+            # prefer random puzzle from test.csv when present
+            test_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+            if os.path.exists(test_path):
+                self.load_random_test_puzzle(test_path)
+            else:
+                self.load_puzzle()
         elif action_name == "clean_board":
-            self.board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+            # clear only non-fixed cells
+            for r in range(GRID_SIZE):
+                for c in range(GRID_SIZE):
+                    if not self.fixed[r][c]:
+                        self.board[r][c] = 0
             self.selected_cell = None
         else:
             # no additional buttons available; log unexpected
