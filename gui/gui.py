@@ -4,6 +4,7 @@ from tkinter import filedialog
 import sys
 import os
 import random
+import csv
 
 # Configure logger if you have one in the main application
 import logging
@@ -61,52 +62,70 @@ def load_board_from_file(path: str):
 def parse_puzzle_line(line: str):
     """Parse a single CSV/text line into a 9x9 board (list of lists).
 
-    Supports:
-    - 81-character strings of digits/dots (no separators)
-    - comma or space separated tokens (9 tokens per row or 81 tokens total)
-    Returns a 9x9 list of ints (0 for blank).
+    The input may be:
+    * a contiguous 81-character string of digits/dots
+    * comma/space separated numbers (81 tokens)
+    * a CSV row containing extra columns (e.g. source, question, answer, rating)
+      In that case we scan each field and pick the first one that looks like a
+      puzzle (contains at least 81 digits/dots).
+
+    Returns a 9x9 list of ints (0 for blank) or ``None`` if the line couldn't be
+    interpreted.
     """
     s = line.strip()
     if not s:
         return None
 
-    # try comma-separated or space-separated tokens
-    if "," in s or " " in s:
-        parts = [p for p in s.replace(",", " ").split() if p]
-        if len(parts) >= GRID_SIZE * GRID_SIZE:
-            parts = parts[: GRID_SIZE * GRID_SIZE]
-        elif len(parts) == GRID_SIZE:
-            # maybe a single row; cannot parse full board
-            return None
-        if len(parts) == GRID_SIZE * GRID_SIZE:
+    # helper that attempts to convert a single string fragment into a board
+    def try_fragment(fragment: str):
+        # comma/space separated tokens
+        if "," in fragment or " " in fragment:
+            parts = [p for p in fragment.replace(",", " ").split() if p]
+            if len(parts) >= GRID_SIZE * GRID_SIZE:
+                parts = parts[: GRID_SIZE * GRID_SIZE]
+            elif len(parts) == GRID_SIZE:
+                return None
+            if len(parts) == GRID_SIZE * GRID_SIZE:
+                board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
+                for i, token in enumerate(parts):
+                    r = i // GRID_SIZE
+                    c = i % GRID_SIZE
+                    if token in (".", "0"):
+                        board[r][c] = 0
+                    else:
+                        try:
+                            board[r][c] = int(token)
+                        except ValueError:
+                            board[r][c] = 0
+                return board
+        # contiguous format, remove everything except digits and dots
+        compact = "".join(ch for ch in fragment if ch.isdigit() or ch == ".")
+        if len(compact) >= GRID_SIZE * GRID_SIZE:
+            compact = compact[: GRID_SIZE * GRID_SIZE]
             board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
-            for i, token in enumerate(parts):
+            for i, ch in enumerate(compact):
                 r = i // GRID_SIZE
                 c = i % GRID_SIZE
-                if token in (".", "0"):
+                if ch == "." or ch == "0":
                     board[r][c] = 0
                 else:
-                    try:
-                        board[r][c] = int(token)
-                    except ValueError:
-                        board[r][c] = 0
+                    board[r][c] = int(ch)
             return board
+        return None
 
-    # try contiguous 81-char format
-    compact = "".join(ch for ch in s if ch.isdigit() or ch == ".")
-    if len(compact) >= GRID_SIZE * GRID_SIZE:
-        compact = compact[: GRID_SIZE * GRID_SIZE]
-        board = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
-        for i, ch in enumerate(compact):
-            r = i // GRID_SIZE
-            c = i % GRID_SIZE
-            if ch == "." or ch == "0":
-                board[r][c] = 0
-            else:
-                board[r][c] = int(ch)
-        return board
-
-    return None
+    # if the line looks like a CSV row, split it and examine each field
+    if "," in s:
+        try:
+            parts = next(csv.reader([s]))
+        except Exception:
+            parts = s.split(",")
+        for part in parts:
+            board = try_fragment(part)
+            if board is not None:
+                return board
+        # none of the fields produced a board; fall through to try the whole line
+    # finally try the entire string as one fragment
+    return try_fragment(s)
 
 
 def pick_random_puzzle_from_csv(path: str, exclude_line: str | None = None, tries: int = 5):
@@ -142,6 +161,12 @@ def pick_random_puzzle_from_csv(path: str, exclude_line: str | None = None, trie
     return None, None
 
 
+def resolve_default_puzzle_csv():
+    """Return the required puzzle CSV path."""
+    data_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data"))
+    return os.path.join(data_dir, "validated_test.csv")
+
+
 # --------------------------------------------------
 # GUI class
 # --------------------------------------------------
@@ -174,14 +199,14 @@ class SudokuGUI:
         self.running = True
         self._last_loaded_line = None
 
-        # Try to load an initial puzzle from data/test.csv if available
-        test_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+        # Try to load an initial puzzle from validated_test.csv
+        test_path = resolve_default_puzzle_csv()
         if os.path.exists(test_path):
             try:
                 self.load_random_test_puzzle(test_path)
             except Exception:
                 # ignore and continue with empty board
-                logger.exception("Failed to auto-load initial puzzle from test.csv")
+                logger.exception("Failed to auto-load initial puzzle from %s", test_path)
 
     # ---------- drawing helpers ----------
     def draw_grid(self):
@@ -297,16 +322,18 @@ class SudokuGUI:
                 logger.exception("Failed to load puzzle: %s", e)
 
     def load_random_test_puzzle(self, path: str | None = None):
-        """Load a random puzzle from `data/test.csv`. If `path` is None a default location is used.
+        """Load a random puzzle from validated_test.csv.
 
         Avoids re-loading the same puzzle twice in a row when possible.
         """
         if path is None:
-            path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+            path = resolve_default_puzzle_csv()
+        if not os.path.exists(path):
+            logger.error("Required puzzle CSV not found: %s", path)
+            return
         board, chosen_line = pick_random_puzzle_from_csv(path, exclude_line=self._last_loaded_line)
         if board is None:
-            # fall back to file dialog load
-            self.load_puzzle()
+            logger.error("No valid puzzle rows found in: %s", path)
             return
         self.board = board
         # mark loaded cells as fixed
@@ -348,12 +375,12 @@ class SudokuGUI:
 
     def _perform_action(self, action_name):
         if action_name == "load_new_puzzle":
-            # prefer random puzzle from test.csv when present
-            test_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "test.csv"))
+            # load strictly from validated_test.csv
+            test_path = resolve_default_puzzle_csv()
             if os.path.exists(test_path):
                 self.load_random_test_puzzle(test_path)
             else:
-                self.load_puzzle()
+                logger.error("Required puzzle CSV not found: %s", test_path)
         elif action_name == "clean_board":
             # clear only non-fixed cells
             for r in range(GRID_SIZE):
