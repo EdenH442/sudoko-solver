@@ -17,7 +17,7 @@ LIGHT_GRAY = (240, 240, 240)
 DARK_GRAY = (200, 200, 200)
 HOVER_COLOR = (170, 170, 170)
 TEXT_COLOR = (50, 50, 50)
-HIGHLIGHT_COLOR = (240, 128, 128)
+HIGHLIGHT_COLOR = (173, 216, 230)
 SOLVING_COLOR = (100, 149, 237)
 BACKGROUND_COLOR = (30, 30, 30)
 BUTTON_COLOR = (50, 150, 200)
@@ -60,7 +60,7 @@ def load_board_from_file(path: str):
 # --------------------------------------------------
 
 class SudokuGUI:
-    def __init__(self, width=800, height=700):
+    def __init__(self, width=800, height=750):
         pygame.init()
         self.window_width = width
         self.window_height = height
@@ -68,11 +68,11 @@ class SudokuGUI:
         pygame.display.set_caption("Sudoku Solver")
         self.clock = pygame.time.Clock()
 
-        # compute geometry
-        self.cell_size = min(self.window_width, self.window_height - 120) // GRID_SIZE
+        # compute geometry - fixed cell size to keep grid consistent
+        self.cell_size = 60
         self.grid_offset = (
             (self.window_width - self.cell_size * GRID_SIZE) // 2,
-            20,
+            85,
         )
 
         # state
@@ -81,6 +81,7 @@ class SudokuGUI:
         self.solving_cell = None
         self.font = pygame.font.SysFont("arial", self.cell_size // 2)
         self.button_font = pygame.font.SysFont("arial", 20)
+        self.title_font = pygame.font.SysFont("arial", 40, bold=True)
         self.running = True
 
     # ---------- drawing helpers ----------
@@ -103,6 +104,12 @@ class SudokuGUI:
                 (x_off + i * self.cell_size, y_off + grid_size_px),
                 line_width,
             )
+
+    def draw_title(self):
+        title_text = "SUDOKU SOLVER"
+        txt = self.title_font.render(title_text, True, WHITE)
+        txtrect = txt.get_rect(center=(self.window_width // 2, 40))
+        self.screen.blit(txt, txtrect)
 
     def draw_board(self):
         x_off, y_off = self.grid_offset
@@ -147,8 +154,8 @@ class SudokuGUI:
             color = BUTTON_COLOR
             if rect.collidepoint((mx, my)):
                 color = HOVER_COLOR
-            pygame.draw.rect(self.screen, color, rect)
-            pygame.draw.rect(self.screen, BUTTON_BORDER, rect, 2)
+            pygame.draw.rect(self.screen, color, rect, border_radius=10)
+            pygame.draw.rect(self.screen, BUTTON_BORDER, rect, 2, border_radius=10)
             txt = self.button_font.render(label, True, TEXT_COLOR)
             txtrect = txt.get_rect(center=rect.center)
             self.screen.blit(txt, txtrect)
@@ -208,6 +215,7 @@ class SudokuGUI:
                     elif pygame.K_1 <= event.key <= pygame.K_9:
                         c, r = self.selected_cell
                         self.board[r][c] = event.key - pygame.K_0
+            self.draw_title()
             self.draw_grid()
             self.draw_board()
             self.draw_buttons()
