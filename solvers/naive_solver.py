@@ -13,10 +13,10 @@ class NaiveSolver(BaseSolver):
 
     def solve_with_steps(self) -> Generator[Step, None, None]:
         if not self._is_board_consistent():
-            yield self.board, None
+            yield self.board, None, "done", False
             return
-        yield from self._solve_with_steps_recursive()
-        yield self.board, None
+        solved = yield from self._solve_with_steps_recursive()
+        yield self.board, None, "done", solved
 
     def _solve_recursive(self) -> bool:
         pos = self._find_next_empty_pos()
@@ -44,14 +44,14 @@ class NaiveSolver(BaseSolver):
             if not self._is_valid(row, col, value):
                 continue
             self.board[row][col] = value
-            yield self.board, (col, row)
+            yield self.board, (col, row), "progress", None
 
             solved = yield from self._solve_with_steps_recursive()
             if solved:
                 return True
 
             self.board[row][col] = 0
-            yield self.board, (col, row)
+            yield self.board, (col, row), "progress", None
 
         return False
 

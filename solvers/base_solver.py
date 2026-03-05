@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import time
-from typing import Generator, Optional, Tuple
+from typing import Generator, Literal, Optional, Tuple
 
 Board = list[list[int]]
-Step = tuple[Board, Optional[Tuple[int, int]]]
+Cell = Optional[Tuple[int, int]]
+Status = Literal["progress", "done"]
+Step = tuple[Board, Cell, Status, Optional[bool]]
 
 
 class BaseSolver(ABC):
@@ -19,7 +21,7 @@ class BaseSolver(ABC):
 
     @abstractmethod
     def solve_with_steps(self) -> Generator[Step, None, None]:
-        """Yield (board, active_cell) as the solver progresses."""
+        """Yield (board, active_cell, status, solved_if_done)."""
         raise NotImplementedError("solve_with_steps not implemented")
 
     def run_with_time_analysis(self) -> tuple[bool, float]:

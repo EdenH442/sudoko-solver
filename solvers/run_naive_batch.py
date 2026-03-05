@@ -56,10 +56,10 @@ def solve_one(puzzle: str) -> tuple[bool, int, float]:
     solved = False
     start = time.perf_counter()
 
-    for _, active_cell in solver.solve_with_steps():
+    for *_, status, solved_if_done in solver.solve_with_steps():
         steps += 1
-        if active_cell is None:
-            solved = True
+        if status == "done":
+            solved = bool(solved_if_done)
             break
 
     elapsed = time.perf_counter() - start
