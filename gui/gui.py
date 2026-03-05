@@ -5,6 +5,8 @@ import sys
 import os
 import random
 import csv
+import time
+from solvers.naive_solver import NaiveSolver
 
 # Configure logger if you have one in the main application
 import logging
@@ -30,7 +32,9 @@ FIXED_TEXT_COLOR = (255, 255, 255)
 BUTTON_LABELS = [
     "Clean Board",
     "Load New Puzzle",
+    "Solve (Naive)",
 ]
+SOLVE_STEP_DELAY_MS = 120
 
 # --------------------------------------------------
 # Utility functions
@@ -162,8 +166,11 @@ def pick_random_puzzle_from_csv(path: str, exclude_line: str | None = None, trie
 
 
 def resolve_default_puzzle_csv():
-    """Return the required puzzle CSV path."""
+    """Return default puzzle CSV path, preferring sudoku.csv (0 = empty)."""
     data_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data"))
+    preferred = os.path.join(data_dir, "sudoku.csv")
+    if os.path.exists(preferred):
+        return preferred
     return os.path.join(data_dir, "validated_test.csv")
 
 
@@ -195,9 +202,16 @@ class SudokuGUI:
         self.solving_cell = None
         self.font = pygame.font.SysFont("arial", self.cell_size // 2)
         self.button_font = pygame.font.SysFont("arial", 20)
+        self.stats_font = pygame.font.SysFont("arial", 22)
         self.title_font = pygame.font.SysFont("arial", 40, bold=True)
         self.running = True
         self._last_loaded_line = None
+        self._solve_steps = None
+        self._last_solve_step_ms = 0
+        self._solve_step_count = 0
+        self._solve_start_time = 0.0
+        self._last_result_steps = None
+        self._last_result_time = None
 
         # Try to load an initial puzzle from validated_test.csv
         test_path = resolve_default_puzzle_csv()
@@ -286,6 +300,22 @@ class SudokuGUI:
             txtrect = txt.get_rect(center=rect.center)
             self.screen.blit(txt, txtrect)
 
+    def draw_solver_results(self):
+        rects = self._button_rects()
+        if not rects:
+            return
+        base_y = rects[0].bottom + 22
+        steps_value = "" if self._last_result_steps is None else str(self._last_result_steps)
+        time_value = "" if self._last_result_time is None else f"{self._last_result_time:.2f}s"
+
+        result_text = self.stats_font.render(
+        f"Steps: {steps_value}   |   Time: {time_value}",
+        True,
+        WHITE,
+        )
+        result_rect = result_text.get_rect(center=(self.window_width // 2, base_y))
+        self.screen.blit(result_text, result_rect)
+
     # ---------- input / event handling ----------
     def handle_button_click(self, pos):
         for rect, label in zip(self._button_rects(), BUTTON_LABELS):
@@ -322,7 +352,7 @@ class SudokuGUI:
                 logger.exception("Failed to load puzzle: %s", e)
 
     def load_random_test_puzzle(self, path: str | None = None):
-        """Load a random puzzle from validated_test.csv.
+        """Load a random puzzle from the configured CSV (default: sudoku.csv).
 
         Avoids re-loading the same puzzle twice in a row when possible.
         """
@@ -349,6 +379,8 @@ class SudokuGUI:
                 if event.type == pygame.QUIT:
                     self.running = False
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if self._solve_steps is not None:
+                        continue
                     cell = self.handle_grid_click(event.pos)
                     if cell:
                         self.selected_cell = cell
@@ -357,6 +389,8 @@ class SudokuGUI:
                         if action:
                             self._perform_action(action)
                 elif event.type == pygame.KEYDOWN and self.selected_cell:
+                    if self._solve_steps is not None:
+                        continue
                     c, r = self.selected_cell
                     # Do not allow editing fixed (loaded) cells
                     if self.fixed[r][c]:
@@ -365,17 +399,32 @@ class SudokuGUI:
                         self.board[r][c] = 0
                     elif pygame.K_1 <= event.key <= pygame.K_9:
                         self.board[r][c] = event.key - pygame.K_0
+
+            if self._solve_steps is not None:
+                now_ms = pygame.time.get_ticks()
+                if now_ms - self._last_solve_step_ms >= SOLVE_STEP_DELAY_MS:
+                    self._last_solve_step_ms = now_ms
+                    try:
+                        _, active_cell = next(self._solve_steps)
+                        self._solve_step_count += 1
+                        self.solving_cell = active_cell
+                        if active_cell is None:
+                            self._finalize_solve_stats()
+                    except StopIteration:
+                        self._finalize_solve_stats()
+
             self.draw_title()
             self.draw_grid()
             self.draw_board()
             self.draw_buttons()
+            self.draw_solver_results()
             pygame.display.flip()
             self.clock.tick(60)
         pygame.quit()
 
     def _perform_action(self, action_name):
         if action_name == "load_new_puzzle":
-            # load strictly from validated_test.csv
+            # load from configured default CSV (prefers sudoku.csv)
             test_path = resolve_default_puzzle_csv()
             if os.path.exists(test_path):
                 self.load_random_test_puzzle(test_path)
@@ -388,9 +437,40 @@ class SudokuGUI:
                     if not self.fixed[r][c]:
                         self.board[r][c] = 0
             self.selected_cell = None
+        elif action_name == "solve_(naive)":
+            # animate step-by-step in the main loop
+            solver = NaiveSolver(self.board)
+            self._solve_steps = solver.solve_with_steps()
+            self._last_solve_step_ms = pygame.time.get_ticks()
+            self._solve_step_count = 0
+            self._solve_start_time = time.perf_counter()
+            self._last_result_steps = None
+            self._last_result_time = None
+            self.selected_cell = None
+            self.solving_cell = None
         else:
             # no additional buttons available; log unexpected
             logger.warning("Unhandled button action: %s", action_name)
+
+    def _finalize_solve_stats(self):
+        if self._solve_steps is None:
+            return
+        elapsed = time.perf_counter() - self._solve_start_time
+        solved = all(self.board[r][c] != 0 for r in range(GRID_SIZE) for c in range(GRID_SIZE))
+        status = "Solved" if solved else "No solution found"
+        self._last_result_steps = self._solve_step_count
+        self._last_result_time = elapsed
+        print(f"Naive Solver finished: {status}")
+        print(f"Steps: {self._solve_step_count}")
+        print(f"Time: {elapsed:.2f} seconds")
+        logger.info(
+            "Naive Solver finished | status=%s | steps=%d | time=%.2fs",
+            status,
+            self._solve_step_count,
+            elapsed,
+        )
+        self._solve_steps = None
+        self.solving_cell = None
 
 
 # --------------------------------------------------
