@@ -186,6 +186,7 @@ class SudokuGUI:
         self.screen = pygame.display.set_mode((self.window_width, self.window_height))
         pygame.display.set_caption("Sudoku Solver")
         self.clock = pygame.time.Clock()
+        self._last_solved = None
 
         # compute geometry - fixed cell size to keep grid consistent
         self.cell_size = 60
@@ -405,10 +406,13 @@ class SudokuGUI:
                 if now_ms - self._last_solve_step_ms >= SOLVE_STEP_DELAY_MS:
                     self._last_solve_step_ms = now_ms
                     try:
-                        _, active_cell = next(self._solve_steps)
+                        board, active_cell, status, solved_if_done = next(self._solve_steps)
                         self._solve_step_count += 1
+                        self.board = board
                         self.solving_cell = active_cell
-                        if active_cell is None:
+
+                        if status == "done":
+                            self._last_solved = solved_if_done
                             self._finalize_solve_stats()
                     except StopIteration:
                         self._finalize_solve_stats()
@@ -446,6 +450,7 @@ class SudokuGUI:
             self._solve_start_time = time.perf_counter()
             self._last_result_steps = None
             self._last_result_time = None
+            self._last_solved = None
             self.selected_cell = None
             self.solving_cell = None
         else:
@@ -456,7 +461,7 @@ class SudokuGUI:
         if self._solve_steps is None:
             return
         elapsed = time.perf_counter() - self._solve_start_time
-        solved = all(self.board[r][c] != 0 for r in range(GRID_SIZE) for c in range(GRID_SIZE))
+        solved = bool(self._last_solved)
         status = "Solved" if solved else "No solution found"
         self._last_result_steps = self._solve_step_count
         self._last_result_time = elapsed
