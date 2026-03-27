@@ -41,12 +41,32 @@ class CspSolver(BaseSolver):
             self.board[row][col] = 0
             self.backtracks += 1
         return False
-        
 
-    
     def _solve_with_steps_recursive(self) -> Generator[Step, None, bool]:
-        raise NotImplementedError("CSP solver is not implemented yet.")
-    
+        self.nodes_visited += 1
+
+        selection = self.select_unassigned_variable() # select next variable using MRV Function
+        if selection is None:
+            return True # puzzle should be solved
+
+        row, col, domain = selection
+        if(len(domain) == 0):
+            return False # cell empty but no legal values - impossible cell, backtrack
+        
+        for value in domain:
+            self.board[row][col] = value
+            self.assignments +=1
+            yield self.board, (col, row), "progress", None # yeilding for visualization after assignment
+
+            solved = yield from self._solve_with_steps_recursive()
+            if solved:
+                return True
+            
+            self.board[row][col] = 0
+            self.backtracks += 1
+            yield self.board, (col, row), "progress", None
+        
+        return False
 
     # Variables for this problem is the empty cells.
     # Domains for each variable is the possible values (from 1 to 9) that can be assigned to that cell 
