@@ -7,6 +7,7 @@ import random
 import csv
 import time
 from solvers.naive_solver import NaiveSolver
+from solvers.csp_solver import CspSolver
 
 # Configure logger if you have one in the main application
 import logging
@@ -33,6 +34,7 @@ BUTTON_LABELS = [
     "Clean Board",
     "Load New Puzzle",
     "Solve (Naive)",
+    "Solve (CSP)"
 ]
 SOLVE_STEP_DELAY_MS = 120
 
@@ -213,6 +215,7 @@ class SudokuGUI:
         self._solve_start_time = 0.0
         self._last_result_steps = None
         self._last_result_time = None
+        self._active_solver_name = None
 
         # Try to load an initial puzzle from validated_test.csv
         test_path = resolve_default_puzzle_csv()
@@ -442,21 +445,25 @@ class SudokuGUI:
                         self.board[r][c] = 0
             self.selected_cell = None
         elif action_name == "solve_(naive)":
-            # animate step-by-step in the main loop
-            solver = NaiveSolver(self.board)
-            self._solve_steps = solver.solve_with_steps()
-            self._last_solve_step_ms = pygame.time.get_ticks()
-            self._solve_step_count = 0
-            self._solve_start_time = time.perf_counter()
-            self._last_result_steps = None
-            self._last_result_time = None
-            self._last_solved = None
-            self.selected_cell = None
-            self.solving_cell = None
+             self._start_solver_animation(NaiveSolver(self.board), "Naive")
+        elif action_name == "solve_(csp)":
+            self._start_solver_animation(CspSolver(self.board), "CSP")
         else:
             # no additional buttons available; log unexpected
             logger.warning("Unhandled button action: %s", action_name)
 
+    def _start_solver_animation(self, solver, solver_name: str):
+        self._active_solver_name = solver_name
+        self._solve_steps = solver.solve_with_steps()
+        self._last_solve_step_ms = pygame.time.get_ticks()
+        self._solve_step_count = 0
+        self._solve_start_time = time.perf_counter()
+        self._last_result_steps = None
+        self._last_result_time = None
+        self._last_solved = None
+        self.selected_cell = None
+        self.solving_cell = None
+    
     def _finalize_solve_stats(self):
         if self._solve_steps is None:
             return
@@ -465,17 +472,20 @@ class SudokuGUI:
         status = "Solved" if solved else "No solution found"
         self._last_result_steps = self._solve_step_count
         self._last_result_time = elapsed
-        print(f"Naive Solver finished: {status}")
+        solver_name = self._active_solver_name or "Solver"
+        print(f"{solver_name} Solver finished: {status}")
         print(f"Steps: {self._solve_step_count}")
         print(f"Time: {elapsed:.2f} seconds")
         logger.info(
-            "Naive Solver finished | status=%s | steps=%d | time=%.2fs",
+            "%s Solver finished | status=%s | steps=%d | time=%.2fs",
+            solver_name,
             status,
             self._solve_step_count,
             elapsed,
         )
         self._solve_steps = None
         self.solving_cell = None
+        self._active_solver_name = None
 
 
 # --------------------------------------------------
