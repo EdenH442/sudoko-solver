@@ -7,13 +7,14 @@ from typing import Iterable
 
 from solvers.base_solver import Board
 from solvers.naive_solver import NaiveSolver
+from solvers.csp_solver import CspSolver
 
 # Later add more solvers here:
 # from solvers.mrv_solver import MrvSolver
 
 SOLVERS = {
     "naive": NaiveSolver,
-    # "mrv": MrvSolver,
+    "csp": CspSolver,
 }
 
 
