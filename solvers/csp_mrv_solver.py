@@ -4,7 +4,7 @@ from typing import Generator
 from .base_solver import BaseSolver, Step
 from sudoku.board_utils import is_board_consistent, is_valid
 
-class CspSolver(BaseSolver):
+class CspMRVSolver(BaseSolver):
     solver_name = "csp"
 
     def run(self) -> bool:

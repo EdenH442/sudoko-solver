@@ -7,7 +7,7 @@ from typing import Iterable
 
 from solvers.base_solver import Board
 from solvers.naive_solver import NaiveSolver
-from solvers.csp_solver import CspSolver
+from solvers.csp_mrv_solver import CspMRVSolver
 from solvers.csp_forward_solver import CspForwardCheckingSolver
 
 # Later add more solvers here:
@@ -15,7 +15,7 @@ from solvers.csp_forward_solver import CspForwardCheckingSolver
 
 SOLVERS = {
     "naive": NaiveSolver,
-    "csp": CspSolver,
+    "csp_mrv": CspMRVSolver,
     "csp_forward": CspForwardCheckingSolver,
 }
 

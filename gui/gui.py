@@ -7,7 +7,7 @@ import random
 import csv
 import time
 from solvers.naive_solver import NaiveSolver
-from solvers.csp_solver import CspSolver
+from solvers.csp_mrv_solver import CspMRVSolver
 
 # Configure logger if you have one in the main application
 import logging
@@ -447,7 +447,7 @@ class SudokuGUI:
         elif action_name == "solve_(naive)":
              self._start_solver_animation(NaiveSolver(self.board), "Naive")
         elif action_name == "solve_(csp)":
-            self._start_solver_animation(CspSolver(self.board), "CSP")
+            self._start_solver_animation(CspMRVSolver(self.board), "CSP")
         else:
             # no additional buttons available; log unexpected
             logger.warning("Unhandled button action: %s", action_name)
