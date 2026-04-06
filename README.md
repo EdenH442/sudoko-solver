@@ -44,37 +44,90 @@ This reduces future conflicts but introduces additional overhead, creating a tra
 | MRV + LCV           | 1.20        | 0.97            | 4,766     | 4,710          | 4,765           |
 | MRV + Forward Check | 1.33        | 0.82            | 4,742     | 5,117          | 5,172           |
 
-Median values indicate that most puzzles are solved quickly, while a smaller number of difficult instances dominate the average runtime.
+Median values show that most puzzles are solved quickly, while a smaller number of difficult instances dominate the average runtime.
+
+Despite a dramatic reduction in explored nodes (over 30× with MRV), runtime remains similar across solvers.  
+This is primarily due to an implementation tradeoff: domain values are recomputed at every step, introducing significant overhead that offsets the gains from smarter search strategies.
+
+---
 
 ## Key Insights
 
-- **MRV significantly reduces the search space**  
-  Compared to naive backtracking, MRV reduces the number of explored nodes by over 30×, confirming that variable selection has a major impact on search efficiency.
+- **Search space reduction is significant with heuristics**  
+  MRV reduces explored nodes by more than 30× compared to naive backtracking, confirming that variable selection strongly impacts search efficiency.
 
-- **Runtime does not directly follow search reduction**  
-  Despite the large drop in nodes, MRV shows similar runtime to the naive solver. The overhead of computing candidate domains offsets part of the gain.
+- **Runtime is not solely determined by search size**  
+  Even with far fewer nodes, MRV does not outperform naive backtracking in runtime. The cost of repeatedly computing domains reduces the expected gains.
 
-- **LCV improves search efficiency with minimal runtime impact**  
-  Adding LCV further reduces nodes and backtracking, but does not significantly change runtime. The benefit is mainly in improving the quality of the search rather than execution speed.
+- **LCV improves decision quality, not runtime**  
+  LCV further reduces backtracking and explored nodes, but does not significantly affect execution time. Its benefit is in guiding the search more effectively rather than speeding it up.
 
-- **Forward checking introduces overhead without clear runtime benefit**  
-  Although forward checking slightly reduces the number of explored nodes, it results in higher overall runtime. The cost of maintaining domain consistency outweighs its pruning advantage in this implementation.
+- **Forward checking adds pruning at a cost**  
+  While forward checking slightly reduces the search space, it introduces additional computation overhead. In this implementation, the cost outweighs the benefit.
 
-- **Search cost vs computation cost is a key tradeoff**  
-  These results show that reducing the search space alone is not enough — the cost of each step must also be considered.
+- **Computation vs search is the core tradeoff**  
+  These results highlight a key principle: reducing the search space is not enough — the cost of maintaining and evaluating constraints must also be efficient.
+
+---
 
 ## Implementation Note
 
-In this implementation, the domain (valid values for each cell) is recomputed at every step instead of being stored and updated incrementally.
+In this implementation, domains (valid values for each cell) are recomputed from scratch at every step rather than maintained incrementally.
 
-This keeps the solver simpler, but adds overhead — especially for MRV, LCV, and forward checking, which rely heavily on domain calculations. As a result, even though these approaches reduce the number of explored states, the runtime improvement is limited.
+This simplifies the design but introduces substantial overhead, particularly for MRV, LCV, and forward checking, which depend heavily on domain evaluation. As a result, improvements in search efficiency do not fully translate into runtime gains.
 
-A more optimized approach would maintain and update domains as the search progresses. This would likely reduce the overhead and better reflect the expected performance gains from these heuristics.
+A more optimized approach would maintain domains incrementally and propagate updates during the search.  
+This would eliminate redundant computations and is expected to significantly improve runtime performance, bringing it closer to the theoretical advantages of these heuristics.
 
-## Vizuale Example Comparison
+
+## Visual Comparison
 ### Naive Solver — 262 moves, ~34 seconds
 ![Naive Solver](assets/naive_solver_gui.gif)
 
 ### CSP Solver — 48 moves, ~7 seconds
 ![CSP Solver](assets/csp_solver_gui.gif)
 
+The naive solver explores many unnecessary branches, repeatedly revisiting invalid paths.
+In contrast, the CSP-based solver focuses on constrained regions early,
+resulting in a more directed and efficient search.
+
+## Takeaways
+
+- Heuristics like MRV and LCV drastically reduce the search space
+- Runtime performance depends heavily on implementation details
+- Efficient state management (e.g., incremental domain updates) is critical in CSP solvers
+- Visualization helps reveal how different strategies explore the search space
+
+## How To Run:
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/EdenH442/sudoko-solver.git
+cd Sudoko-Solver
+```
+
+### 2. Install dependencies
+```bash
+python -m pip install pygame
+```
+
+### 3. Run the GUI
+```bash
+python -m gui.gui
+```
+
+### 4. Run benchmarks
+```bash
+python -m benchmark.run_benchmark --solver naive --limit 5  --output results/your_output_file.csv
+```
+
+### Requirements
+- Python 3.10+ (recommended: Python 3.12)
+
+## Future Improvements
+
+- **Incremental domain tracking**  
+  Avoid recomputing domains every step to reduce overhead and improve runtime.
+
+- **Stronger constraint propagation (e.g., AC-3)**  
+  Detect conflicts earlier and further reduce the search space.
