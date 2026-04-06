@@ -9,7 +9,7 @@ The codebase is structured to support multiple solver implementations, a benchma
 Sudoku can be modeled as a Constraint Satisfaction Problem (CSP): each cell is a variable, and constraints enforce that values do not repeat within rows, columns, or subgrids.
 Despite the simplicity of the rules, the search space grows rapidly. This makes Sudoku a useful testbed for comparing search strategies, where small changes in variable or value selection can lead to significant differences in performance.
 
-![alt text](Gemini_Generated_Image_rz8xwdrz8xwdrz8x.png)
+![Sudoku as CSP](Gemini_Generated_Image_rz8xwdrz8xwdrz8x.png)
 
 ## Solver Progression
 
