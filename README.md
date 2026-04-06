@@ -9,24 +9,8 @@ The codebase is structured to support multiple solver implementations, a benchma
 Sudoku can be modeled as a Constraint Satisfaction Problem (CSP): each cell is a variable, and constraints enforce that values do not repeat within rows, columns, or subgrids.
 Despite the simplicity of the rules, the search space grows rapidly. This makes Sudoku a useful testbed for comparing search strategies, where small changes in variable or value selection can lead to significant differences in performance.
 
-```mermaid
-flowchart TD
-    A[Sudoku Puzzle] --> B[Variables: empty cells]
-    A --> C[Domains: possible values 1-9]
-    A --> D[Constraints]
+![alt text](Gemini_Generated_Image_rz8xwdrz8xwdrz8x.png)
 
-    D --> E[No duplicates in row]
-    D --> F[No duplicates in column]
-    D --> G[No duplicates in 3x3 subgrid]
-
-    B --> H[Search Strategy]
-    C --> H
-    D --> H
-
-    H --> I[Naive Backtracking]
-    H --> J[MRV]
-    H --> K[MRV + LCV]
-    H --> L[MRV + Forward Checking]
 ## Solver Progression
 
 The project follows a progression of increasingly informed search strategies, where each solver builds on the previous one.
@@ -57,3 +41,33 @@ This reduces future conflicts but introduces additional overhead, creating a tra
 | MRV                 | 1.20        | 0.60            | 5,173     | 5,117          | 5,172           |
 | MRV + LCV           | 1.20        | 0.97            | 4,766     | 4,710          | 4,765           |
 | MRV + Forward Check | 1.33        | 0.82            | 4,742     | 5,117          | 5,172           |
+
+Median values indicate that most puzzles are solved quickly, while a smaller number of difficult instances dominate the average runtime.
+
+## Key Insights
+
+- **MRV significantly reduces the search space**  
+  Compared to naive backtracking, MRV reduces the number of explored nodes by over 30×, confirming that variable selection has a major impact on search efficiency.
+
+- **Runtime does not directly follow search reduction**  
+  Despite the large drop in nodes, MRV shows similar runtime to the naive solver. The overhead of computing candidate domains offsets part of the gain.
+
+- **LCV improves search efficiency with minimal runtime impact**  
+  Adding LCV further reduces nodes and backtracking, but does not significantly change runtime. The benefit is mainly in improving the quality of the search rather than execution speed.
+
+- **Forward checking introduces overhead without clear runtime benefit**  
+  Although forward checking slightly reduces the number of explored nodes, it results in higher overall runtime. The cost of maintaining domain consistency outweighs its pruning advantage in this implementation.
+
+- **Search cost vs computation cost is a key tradeoff**  
+  These results show that reducing the search space alone is not enough — the cost of each step must also be considered.
+
+
+These results highlight a common tradeoff in search problems: more informed strategies reduce the number of explored states, but may introduce additional computational overhead per step.
+
+## Implementation Note
+
+In this implementation, the domain (valid values for each cell) is recomputed at every step instead of being stored and updated incrementally.
+
+This keeps the solver simpler, but adds overhead — especially for MRV, LCV, and forward checking, which rely heavily on domain calculations. As a result, even though these approaches reduce the number of explored states, the runtime improvement is limited.
+
+A more optimized approach would maintain and update domains as the search progresses. This would likely reduce the overhead and better reflect the expected performance gains from these heuristics.

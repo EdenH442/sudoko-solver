@@ -10,3 +10,4 @@ env/
 # Add other patterns here if needed
 data/*.csv
 *.csv
+*.png
