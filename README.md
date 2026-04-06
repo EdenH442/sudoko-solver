@@ -9,6 +9,24 @@ The codebase is structured to support multiple solver implementations, a benchma
 Sudoku can be modeled as a Constraint Satisfaction Problem (CSP): each cell is a variable, and constraints enforce that values do not repeat within rows, columns, or subgrids.
 Despite the simplicity of the rules, the search space grows rapidly. This makes Sudoku a useful testbed for comparing search strategies, where small changes in variable or value selection can lead to significant differences in performance.
 
+```mermaid
+flowchart TD
+    A[Sudoku Puzzle] --> B[Variables: empty cells]
+    A --> C[Domains: possible values 1-9]
+    A --> D[Constraints]
+
+    D --> E[No duplicates in row]
+    D --> F[No duplicates in column]
+    D --> G[No duplicates in 3x3 subgrid]
+
+    B --> H[Search Strategy]
+    C --> H
+    D --> H
+
+    H --> I[Naive Backtracking]
+    H --> J[MRV]
+    H --> K[MRV + LCV]
+    H --> L[MRV + Forward Checking]
 ## Solver Progression
 
 The project follows a progression of increasingly informed search strategies, where each solver builds on the previous one.
