@@ -10,7 +10,7 @@ Sudoku can be modeled as a Constraint Satisfaction Problem (CSP): each cell is a
 Despite the simplicity of the rules, the search space grows rapidly. This makes Sudoku a useful testbed for comparing search strategies, where small changes in variable or value selection can lead to significant differences in performance.
 
 <p align="center">
-  <img src="assets/sudoku%20as%20csp.png" alt="Sudoku CSP Diagram" width="600"/>
+  <img src="assets/sudoku_as_csp.png" alt="Sudoku CSP Diagram" width="600"/>
 </p>
 
 ## Solver Progression
