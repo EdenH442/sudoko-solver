@@ -4,8 +4,8 @@ from typing import Generator
 from .base_solver import BaseSolver, Step
 from sudoku.board_utils import is_board_consistent, is_valid
 
-class CspSolver(BaseSolver):
-    solver_name = "csp"
+class CspMrvSolver(BaseSolver):
+    solver_name = "csp_mrv"
 
     def run(self) -> bool:
         if not is_board_consistent(self.board):
@@ -32,9 +32,12 @@ class CspSolver(BaseSolver):
         if(len(domain) == 0):
             return False # cell empty but no legal values - impossible cell, backtrack
         
-        for value in domain:
+        ordered_domain = self.order_domain_values(row, col, domain)
+
+        for value in ordered_domain:
             self.board[row][col] = value
             self.assignments += 1
+
             if self._solve_recursive():
                 return True
             
@@ -53,7 +56,9 @@ class CspSolver(BaseSolver):
         if(len(domain) == 0):
             return False # cell empty but no legal values - impossible cell, backtrack
         
-        for value in domain:
+        ordered_domain = self.order_domain_values(row, col, domain)
+
+        for value in ordered_domain:
             self.board[row][col] = value
             self.assignments +=1
             yield self.board, (col, row), "progress", None # yeilding for visualization after assignment
@@ -109,4 +114,7 @@ class CspSolver(BaseSolver):
             return None # no unassigned variables left, should be solved
             
         return best_row, best_col, best_domain
+    
+    def order_domain_values(self, row: int, col: int, domain: list[int]) -> list[int]:
+        return domain
                 
