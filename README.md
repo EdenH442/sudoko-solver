@@ -1,6 +1,6 @@
 ## Overview
 
-This project explores how different search strategies and constraint satisfaction techniques effect the performance of a Sudoku solver. Starting from a naive backtracking approach, and progressively adding heuristics such as MRV (Minimum Remaining Values) and LCV (Least Constraining Value), and evaluates their impact on solving efficiency.
+This project explores how different search strategies and constraint satisfaction techniques affect the performance of a Sudoku solver. Starting from a naive backtracking approach, the project progressively adds heuristics such as MRV (Minimum Remaining Values) and LCV (Least Constraining Value), and evaluates their impact on solving efficiency.
 
 The codebase is structured to support multiple solver implementations, a benchmarking system to compare performance across puzzles, and a visualization tool to observe the solving process step-by-step. 
 
@@ -63,9 +63,6 @@ Median values indicate that most puzzles are solved quickly, while a smaller num
 - **Search cost vs computation cost is a key tradeoff**  
   These results show that reducing the search space alone is not enough — the cost of each step must also be considered.
 
-
-These results highlight a common tradeoff in search problems: more informed strategies reduce the number of explored states, but may introduce additional computational overhead per step.
-
 ## Implementation Note
 
 In this implementation, the domain (valid values for each cell) is recomputed at every step instead of being stored and updated incrementally.
@@ -73,3 +70,11 @@ In this implementation, the domain (valid values for each cell) is recomputed at
 This keeps the solver simpler, but adds overhead — especially for MRV, LCV, and forward checking, which rely heavily on domain calculations. As a result, even though these approaches reduce the number of explored states, the runtime improvement is limited.
 
 A more optimized approach would maintain and update domains as the search progresses. This would likely reduce the overhead and better reflect the expected performance gains from these heuristics.
+
+## Vizuale Example Comparison
+### Naive Solver — 262 moves, ~34 seconds
+![Naive Solver](assets/naive_solver_gui.gif)
+
+### CSP Solver — 48 moves, ~7 seconds
+![CSP Solver](assets/csp_solver_gui.gif)
+
